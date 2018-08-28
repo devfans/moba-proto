@@ -1,0 +1,27 @@
+[package]
+name = "moba-proto"
+version = "0.0.1"
+authors = ["Stefan Liu"]
+
+[[bin]]
+name = "server"
+path = "src/server.rs"
+
+[[bin]]
+name = "client"
+path = "src/client.rs"
+
+[profile.release]
+panic = "abort"
+[profile.dev]
+panic = "abort"
+
+[dependencies]
+http = "0.1.10"
+tokio = "*"
+tokio-io = "*"
+tokio-codec = "*"
+serde_json = "1.0"
+futures = "*"
+bytes = "0.4"
+
