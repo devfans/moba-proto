@@ -21,7 +21,7 @@ Simple proto implementation for MOBA.
 + Client send 'Battle End' message to server. Server stop the battle and clean up.
 
 
-[travis-image]: https://img.shields.io/travis/devfans/mobo-proto/master.svg
-[travis-url]: https://travis-ci.org/devfans/mobo-proto
+[travis-image]: https://img.shields.io/travis/devfans/moba-proto/master.svg
+[travis-url]: https://travis-ci.org/devfans/moba-proto
 
 
