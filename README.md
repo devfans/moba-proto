@@ -8,11 +8,11 @@ Simple proto implementation for MOBA.
 
 + Server starts to listen for a battle with a specific player quantity
 
-+ Clients connect to server and send 'Battle Ready' with battle ID, player Id in the message.
++ Clients connect to server and send 'Battle Ready' with battle ID and player ID in the message.
 
 + Server checks if all required players are in 'Battle Ready' state, if not yet, will drop unknown clients and wait for rest players to be ready
 
-+ Server broadcast battle player IDs to all and get confirmation from clients. Then broadcast 'Battle Start' message to clients.
++ Server broadcast battle player IDs to all clients and get confirmation from them. Then broadcast 'Battle Start' message to clients.
 
 + Clients start the battle with sending game action inputs to server and receive data frames from server, in the mean time, server collects all the inputs and compose data frames, with a interval timer to keep broadcasting data frames to client.
 
