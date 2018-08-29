@@ -41,7 +41,7 @@ fn main() {
     let listen_addr = service.addr;
     let listener = TcpListener::bind(&service.addr).unwrap();
     tokio::run(future::lazy(move || -> Result<(), ()> {
-        let server = Server::new();
+        let server = Server::new(service_ref.clone());
         let serve = listener.incoming().for_each(move |socket| {
             let service = service_ref.clone();
             service.handle(server.clone(), socket);

@@ -4,21 +4,44 @@ Simple proto implementation for MOBA.
 [![Build Status][travis-image]][travis-url]
 
 
+## Player States
++ Connected
++ Init
++ Wait
++ Ready
++ Start
++ Stop
+
+
 ## Battle workflow
 
-+ Server starts to listen for a battle with a specific player quantity
++ Server starts to listen for a battle with a specific player quantity, and a battle ID.
 
-+ Clients connect to server and send 'Battle Ready' with battle ID and player ID in the message.
++ Clients connect to server and server marks clients as `Connected`.
 
-+ Server checks if all required players are in 'Battle Ready' state, if not yet, will drop unknown clients and wait for rest players to be ready
++ Clients send battle init info  with battle ID and player ID in the message, and server check and echo the message and mark clients as 'Init' state.
 
-+ Server broadcast battle player IDs to all clients and get confirmation from them. Then broadcast 'Battle Start' message to clients.
++ Server checks clients state. A client in 'Init' state will be marked as 'Wait' state if the client is claiming an unused player ID or will be ignore for duplicate player ID. 
 
-+ Clients start the battle with sending game action inputs to server and receive data frames from server, in the mean time, server collects all the inputs and compose data frames, with a interval timer to keep broadcasting data frames to client.
++ Server wait till all required players are in 'Wait' state. 
 
-+ Clients receive the data frames and do game computation to update newer battle state.
++ Server drop all unknown clients(which are not in 'Wait' State) and then broadcast battle metadata(including battle members, etc) to clients. 
 
-+ Client send 'Battle End' message to server. Server stop the battle and clean up.
++ Clients receive the battle metadata and confirm to server, then prepare for the battle.
+
++ Server receives confirmations and marks clients as 'Ready' state. Server waits all required clients to be ready.
+
++ Server broadcast battle start requests to clients. When clients are able to start, send start confirmation to server.
+
++ Server waits all the start confirmations, and then start the battle.
+
++ Server will setup a interval timer to keep broardcasting data frames to clients and receives game action inputs from clients which will be used to compose data frames.
+
++ Clients send game actions to server while receiving data frames from server and do game computation to update battle progress on client side. All clients should make deterministic game computations to get the same battle state.
+
++ Battle ends, then clients send battle stop message to server. Server will stop the battle when received stop requests from a certain number of player.
+
++ Battle stops, then server and clients clean up state.
 
 
 [travis-image]: https://img.shields.io/travis/devfans/moba-proto/master.svg
