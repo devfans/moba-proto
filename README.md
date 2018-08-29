@@ -39,9 +39,9 @@ Simple proto implementation for MOBA.
 
 + Clients send game actions to server while receiving data frames from server and do game computation to update battle progress on client side. All clients should make deterministic game computations to get the same battle state.
 
-+ Battle ends, then clients send battle stop message to server. Server will stop the battle when received stop requests from a certain number of players.
++ Battle ends, then clients send battle stop message to server and will be marked as `Stop` state by server. Server will stop the battle when received stop requests from a certain number of players.
 
-+ Battle stops, then server and clients clean up battle state.
++ Battle stops, all clients are in `Stop` state. Server and clients clean up battle state.
 
 
 [travis-image]: https://img.shields.io/travis/devfans/moba-proto/master.svg
