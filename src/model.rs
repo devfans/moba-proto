@@ -102,7 +102,7 @@ impl codec::Decoder for MessageFramer {
 
     #[allow(dead_code)]
     fn decode(&mut self, bytes: &mut bytes::BytesMut) -> Result<Option<Message>, io::Error> {
-        println!("RX: {:?}", bytes.clone());
+        // println!("RX: {:?}", bytes.clone());
         if self.cursor != 0 {
             let cur = cmp::min(self.cursor, bytes.len());
             bytes.advance(cur);

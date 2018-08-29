@@ -41,6 +41,7 @@ impl Client {
 
 pub struct Server {
     clients: Mutex<(Vec<Arc<Client>>, u64)>,
+    players: Mutex<Vec<u8>>,
 }
 
 impl Server {
@@ -48,9 +49,14 @@ impl Server {
     pub fn new(service: Arc<Service>) -> Arc<Server> {
         let server = Arc::new(Server {
             clients: Mutex::new((Vec::new(), 0)),
+            players: Mutex::new(Vec::new()),
         });
         let s = server.clone();
+        let s_load = s.clone();
+        let s_start = s.clone();
         let s_main = s.clone();
+        let service_load = service.clone();
+        let service_start = service.clone();
         let service_main = service.clone();
         println!("Initializing battle: {} with {} players", service.battle, service.players);
         tokio::spawn(timer::Interval::new(Instant::now(), Duration::from_secs(1))
@@ -71,8 +77,9 @@ impl Server {
                             }
                             ready = ready + 1;
                             client.status.store(Status::Wait as usize, Ordering::Release);
-                            println!("Player {} is ready", player);
+                            println!("Player {} init", player);
                             wait_players.push(player);
+                            let _ = client.send(Message::BattleInit { battle: service.battle, player: player as u8 });
                         },
                         Status::Wait => {
                             ready = ready + 1;
@@ -82,16 +89,90 @@ impl Server {
                     }
                 }
                 if ready >= service.players {
-                    println!("{} players will start the battle {}", ready, service.battle);
+                    println!("{} players are prepared for the battle {}, will start loading", ready, service.battle);
                     clients_drop.retain(|client| client.status.load(Ordering::Acquire) == Status::Wait as usize);
+                    let mut players = s.players.lock().unwrap();
+                    for client in clients_drop {
+                        let player = client.player.load(Ordering::Acquire);
+                        players.push(player as u8);
+                    }
                     Err(())
                 } else {
-                    println!("{} players are ready", ready);
+                    println!("{} players are prepared for the battle", ready);
                     Ok(())
                 }
-            }).map_err(|_| { println!("Battle begins") } )
+            })
             .then(|_| {
-                println!("Battle Started");
+                println!("Battle loading");
+                timer::Interval::new(Instant::now(), Duration::from_secs(1))
+                .map_err(|_| {})
+                .for_each(move|_| {
+                    let mut ready = 0;
+                    let mut wait_players = Vec::new();
+                    let clients = s_load.clients.lock().unwrap().0.clone();
+                    let players = s_load.players.lock().unwrap();
+                    for client in clients {
+                        let status: Status = client.status.load(Ordering::Acquire).into();
+                        let player = client.player.load(Ordering::Acquire);
+                        match status {
+                            Status::Wait => {
+                                let _ = client.send(Message::BattleMeta { battle: service_load.battle, players: players.clone() });
+                            },
+                            Status::Ready => {
+                                if !wait_players.contains(&player) {
+                                    wait_players.push(player);
+                                    println!("Player {} is ready", player);
+                                }
+                                ready = ready + 1;
+                            },
+                            _ => {},
+                        }
+                    }
+                    if ready >= service_load.players {
+                        println!("{} players are ready for the battle {}, will pre-start", ready, service_load.battle);
+                        Err(())
+                    } else {
+                        println!("{} players are ready", ready);
+                        Ok(())
+                    }
+                })
+            }).map_err(|_| { println!("Battle loading done") } )
+            .then(|_| {
+                println!("Battle pre-starting");
+                timer::Interval::new(Instant::now(), Duration::from_secs(1))
+                .map_err(|_| {})
+                .for_each(move|_| {
+                    let mut ready = 0;
+                    let mut wait_players = Vec::new();
+                    let clients = s_start.clients.lock().unwrap().0.clone();
+                    for client in clients {
+                        let status: Status = client.status.load(Ordering::Acquire).into();
+                        let player = client.player.load(Ordering::Acquire);
+                        match status {
+                            Status::Ready => {
+                                let _ = client.send(Message::BattleStart { battle: service_start.battle });
+                            },
+                            Status::Start => {
+                                if !wait_players.contains(&player) {
+                                    wait_players.push(player);
+                                    println!("Player {} is starting", player);
+                                }
+                                ready = ready + 1;
+                            },
+                            _ => {},
+                        }
+                    }
+                    if ready >= service_start.players {
+                        println!("{} players are starting the battle {}, battle will begin", ready, service_start.battle);
+                        Err(())
+                    } else {
+                        println!("{} players are starting", ready);
+                        Ok(())
+                    }
+                })
+            }).map_err(|_| { println!("Battle starting now") } )
+            .then(|_| {
+                println!("Battle begin");
                 timer::Interval::new(Instant::now(), Duration::from_secs(1))
                 .for_each(move|_| {
                     let clients = s_main.clients.lock().unwrap().0.clone();
@@ -165,9 +246,15 @@ impl Service {
         tokio::spawn(rx.for_each(move |msg| {
             println!("Received: {:?}", msg);
             match msg {
-                Message::BattleInit { battle, player } => {
+                Message::BattleInit { battle: _, player } => {
                     client.player.store(player as usize, Ordering::Release);
                     client.status.store(Status::Init as usize, Ordering::Release)
+                },
+                Message::BattleMeta { battle: _, players: _ } => {
+                    client.status.store(Status::Ready as usize, Ordering::Release)
+                },
+                Message::BattleStart { battle: _ } => {
+                    client.status.store(Status::Start as usize, Ordering::Release)
                 },
                 _ => { println!("Unknown message!"); },
             }
@@ -188,6 +275,8 @@ impl Service {
                     let client_loop = client.clone();
                     let client_bk = client.clone();
                     let (sink, send) = mpsc::unbounded();
+                    let sink = Arc::new(Mutex::new(sink));
+                    let sink_clone = sink.clone();
                     let stream = send.map_err(|_| -> io::Error {
 					    panic!("mpsc streams cant generate errors!");
 					});
@@ -198,7 +287,8 @@ impl Service {
 
 
                     tokio::spawn(rx.for_each(move |msg| {
-                        future::result(client.handle_server_message(msg))
+                        client.handle_server_message(msg, sink.clone());
+                        Ok(())
                     })
                     .then(move |_| {
                         println!("Reconnecting...");
@@ -206,7 +296,7 @@ impl Service {
                         future::result(Ok(()))
                     }));
 
-                    client_loop.start_client(sink);
+                    client_loop.start_client(sink_clone);
                 },
                 Err(_) => {
                     self.connect();
@@ -217,16 +307,37 @@ impl Service {
     }
 
     #[allow(dead_code)]
-    pub fn handle_server_message(&self, msg: Message) -> Result<(), io::Error> {
-        println!("RX: {:?}", msg);
-        Ok(())
-    }
-
-    #[allow(dead_code)]
-    pub fn start_client(&self, mut tx: mpsc::UnboundedSender<Message>) {
+    pub fn handle_server_message(&self, msg: Message, tx: Arc<Mutex<mpsc::UnboundedSender<Message>>>) {
         macro_rules! send {
             ($msg : expr) => {
                 {
+                    let mut tx = tx.lock().unwrap();
+                    match tx.start_send($msg) {
+                        Ok(sink) => { if !sink.is_ready() { return; } },
+                        Err(err) => { println!("Failed to send: {:?}", err); return; },
+                    }
+                }
+            }
+        }
+
+        println!("RX: {:?}", msg);
+        match msg {
+            Message::BattleMeta { battle: _, players: _ } => {
+                send!(msg);
+            },
+            Message::BattleStart { battle: _  } => {
+                send!(msg);
+            },
+            _ => {},
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn start_client(&self, tx: Arc<Mutex<mpsc::UnboundedSender<Message>>>) {
+        macro_rules! send {
+            ($msg : expr) => {
+                {
+                    let mut tx = tx.lock().unwrap();
                     match tx.start_send($msg) {
                         Ok(sink) => { if !sink.is_ready() { return; } },
                         Err(err) => { println!("Failed to send: {:?}", err); return; },
