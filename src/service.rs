@@ -42,22 +42,42 @@ impl Client {
 pub struct Server {
     clients: Mutex<(Vec<Arc<Client>>, u64)>,
     players: Mutex<Vec<u8>>,
+    bus: Mutex<mpsc::UnboundedSender<Message>>,
+    cache: Mutex<Vec<Message>>,
 }
 
 impl Server {
     #[allow(dead_code)]
+    pub fn get_frame(&self) -> Message {
+        // TODO: Compose data frames here
+        let _cache = self.cache.lock().unwrap();
+        Message::DataFrame { battle: 0 }
+    }
+
+    #[allow(dead_code)]
     pub fn new(service: Arc<Service>) -> Arc<Server> {
+        let (tx, rx) = mpsc::unbounded();
         let server = Arc::new(Server {
             clients: Mutex::new((Vec::new(), 0)),
             players: Mutex::new(Vec::new()),
+            bus: Mutex::new(tx),
+            cache: Mutex::new(Vec::new()),
         });
+        let server_bus = server.clone();
+        tokio::spawn(rx.for_each(move |msg| {
+            println!("Tx-DataInput, {:?}", msg);
+            {
+                let mut cache = server_bus.cache.lock().unwrap();
+                cache.push(msg);
+            }
+            Ok(())
+        }));
         let s = server.clone();
         let s_load = s.clone();
         let s_start = s.clone();
         let s_main = s.clone();
         let service_load = service.clone();
         let service_start = service.clone();
-        let service_main = service.clone();
         println!("Initializing battle: {} with {} players", service.battle, service.players);
         tokio::spawn(timer::Interval::new(Instant::now(), Duration::from_secs(1))
             .map_err(|_| {})
@@ -174,11 +194,13 @@ impl Server {
             .then(|_| {
                 println!("Battle begin");
                 timer::Interval::new(Instant::now(), Duration::from_secs(1))
+                .map_err(|_| {})
                 .for_each(move|_| {
                     let clients = s_main.clients.lock().unwrap().0.clone();
                     let mut clean_up = false;
+                    let frame = s_main.get_frame();
                     for client in clients {
-                        if !client.send(Message::DataFrame { battle: service_main.battle }) {
+                        if !client.send(frame.clone()) {
                             clean_up = true;
                         };
                     }
@@ -186,8 +208,8 @@ impl Server {
                         println!("dropping disconnected client");
                     }
                     println!("Ticking");
-                    future::result(Ok(()))
-                }).map_err(|e| panic!("interval errored; err={:?}", e))
+                    Ok(())
+                })
                 .then(|_| {
                     println!("Broadcasting ended");
                     future::result(Ok(()))
@@ -243,8 +265,28 @@ impl Service {
             client
         };
 
-        tokio::spawn(rx.for_each(move |msg| {
+        tokio::spawn(rx.for_each(move |mut msg| {
+            macro_rules! send {
+                ($msg : expr) => {
+                    {
+                        let mut tx = server.bus.lock().unwrap();
+                        let success = match tx.start_send($msg) {
+                            Ok(sink) => sink.is_ready(),
+                            Err(err) => { 
+                                println!("Failed to send: {:?}", err);
+                                false
+                            },
+                        };
+                        if !success {
+                            panic!("Potential bus busy detected");
+                        }
+                    }
+                }
+            }
+
+
             println!("Received: {:?}", msg);
+            let mut send_msg = false;
             match msg {
                 Message::BattleInit { battle: _, player } => {
                     client.player.store(player as usize, Ordering::Release);
@@ -256,10 +298,15 @@ impl Service {
                 Message::BattleStart { battle: _ } => {
                     client.status.store(Status::Start as usize, Ordering::Release)
                 },
+                Message::DataInput { battle: _, ref mut player } => {
+                    *player = client.player.load(Ordering::Acquire) as u8;
+                    send_msg = client.status.load(Ordering::Acquire) == Status::Start as usize;
+                }
                 _ => { println!("Unknown message!"); },
             }
-            Ok(())
-        }).map_err(|_| {})
+            if send_msg { send!(msg); }
+            future::result(Ok(()))
+        }).map_err(|_| { println!("Client disconnected!");})
         );
     }
 
@@ -350,6 +397,14 @@ impl Service {
         let player = self.conf["player"].as_u64().unwrap() as u8;
         let battle = self.battle;
         send!(Message::BattleInit{ battle, player });
+        tokio::spawn(timer::Interval::new(Instant::now(), Duration::from_secs(1))
+            .for_each(move |_| {
+                let mut tx = tx.lock().unwrap();
+                let _ = tx.start_send(Message::DataInput{ battle, player });
+                future::result(Ok(()))
+            })
+            .map_err(|_| {})
+        );
     }
 }
 

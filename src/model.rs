@@ -53,6 +53,7 @@ pub enum Message {
     },
     DataInput {
         battle: u8,
+        player: u8,
     },
     DataFrame {
         battle: u8,
@@ -168,7 +169,7 @@ impl codec::Decoder for MessageFramer {
             5 => {
                 let battle = get_slice!(1)[0];
                 advance_bytes!();
-                Ok(Some(Message::DataInput{ battle }))
+                Ok(Some(Message::DataInput{ battle, player: 0 }))
             },
             6 => {
                 let battle = get_slice!(1)[0];
@@ -227,7 +228,7 @@ impl codec::Encoder for MessageFramer {
                 res.put_u8(0);
                 res.put_u8(battle);
             },
-            Message::DataInput { battle } => {
+            Message::DataInput { battle, player: _ } => {
                 res.reserve(5);
                 res.put_u8(5);
                 res.put_u16_le(1 as u16);
