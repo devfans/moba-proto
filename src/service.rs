@@ -11,6 +11,7 @@ use model::*;
 use futures::*;
 use futures::sync::mpsc;
 use std::sync::{Arc, Mutex};
+// use std::sync::mpsc::{channel, Sender};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use rand::Rng;
@@ -202,7 +203,7 @@ impl Server {
             }).map_err(|_| { println!("Battle starting now") } )
             .then(|_| {
                 println!("Battle begin");
-                timer::Interval::new(Instant::now(), Duration::from_millis(200))
+                timer::Interval::new(Instant::now(), Duration::from_millis(100))
                 .map_err(|_| {})
                 .for_each(move|_| {
                     let clients = s_main.clients.lock().unwrap().0.clone();
@@ -248,6 +249,7 @@ impl Service {
             players
         }
     }
+
     #[allow(dead_code)]
     pub fn handle(&self, server: Arc<Server>, sock: net::TcpStream) {
         sock.set_nodelay(true).unwrap();
@@ -320,7 +322,7 @@ impl Service {
     }
 
     #[allow(dead_code)]
-    pub fn connect(self) {
+    pub fn connect(self, relay: Arc<Mutex<mpsc::UnboundedSender<Message>>>) {
         tokio::spawn(net::TcpStream::connect(&self.addr)
         .then(move |res| -> future::FutureResult<(), ()> {
             match res {
@@ -341,21 +343,21 @@ impl Service {
 						future::result(Ok(()))
 					}));
 
-
+                    let relay_clone = relay.clone();
                     tokio::spawn(rx.for_each(move |msg| {
-                        client.handle_server_message(msg, sink.clone());
+                        client.handle_server_message(msg, sink.clone(), relay.clone());
                         Ok(())
                     })
                     .then(move |_| {
                         println!("Reconnecting...");
-                        Arc::try_unwrap(client_bk).ok().unwrap().connect();
+                        Arc::try_unwrap(client_bk).ok().unwrap().connect(relay_clone.clone());
                         future::result(Ok(()))
                     }));
 
                     client_loop.start_client(sink_clone);
                 },
                 Err(_) => {
-                    self.connect();
+                    self.connect(relay.clone());
                 },
             };
             future::result(Ok(()))
@@ -363,11 +365,11 @@ impl Service {
     }
 
     #[allow(dead_code)]
-    pub fn handle_server_message(&self, msg: Message, tx: Arc<Mutex<mpsc::UnboundedSender<Message>>>) {
+    pub fn handle_server_message(&self, msg: Message, tx: Arc<Mutex<mpsc::UnboundedSender<Message>>>, relay: Arc<Mutex<mpsc::UnboundedSender<Message>>>) {
         macro_rules! send {
-            ($msg : expr) => {
+            ($tx: expr, $msg : expr) => {
                 {
-                    let mut tx = tx.lock().unwrap();
+                    let mut tx = $tx.lock().unwrap();
                     match tx.start_send($msg) {
                         Ok(sink) => { if !sink.is_ready() { return; } },
                         Err(err) => { println!("Failed to send: {:?}", err); return; },
@@ -379,10 +381,13 @@ impl Service {
         println!("RX: {:?}", msg);
         match msg {
             Message::BattleMeta { battle: _, players: _ } => {
-                send!(msg);
+                send!(tx, msg);
             },
             Message::BattleStart { battle: _  } => {
-                send!(msg);
+                send!(tx, msg);
+            },
+            Message::DataFrame { .. } => {
+                send!(relay, msg);
             },
             _ => {},
         }

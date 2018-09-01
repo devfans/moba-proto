@@ -7,10 +7,6 @@ authors = ["Stefan Liu"]
 name = "server"
 path = "src/server.rs"
 
-[[bin]]
-name = "client"
-path = "src/client.rs"
-
 [profile.release]
 panic = "abort"
 [profile.dev]
