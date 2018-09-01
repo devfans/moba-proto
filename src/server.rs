@@ -5,6 +5,7 @@ extern crate tokio;
 extern crate tokio_codec;
 extern crate bytes;
 extern crate tokio_io;
+extern crate rand;
 
 use serde_json::Value;
 use tokio::net::TcpListener;

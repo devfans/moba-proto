@@ -57,6 +57,7 @@ pub enum Message {
     },
     DataFrame {
         battle: u8,
+        code: u8,
     },
 }
 
@@ -173,8 +174,9 @@ impl codec::Decoder for MessageFramer {
             },
             6 => {
                 let battle = get_slice!(1)[0];
+                let code = get_slice!(1)[0];
                 advance_bytes!();
-                Ok(Some(Message::DataFrame{ battle }))
+                Ok(Some(Message::DataFrame{ battle, code }))
             },
             _ => {
 				return Err(io::Error::new(io::ErrorKind::InvalidData, CodecError))
@@ -235,12 +237,13 @@ impl codec::Encoder for MessageFramer {
                 res.put_u8(0);
                 res.put_u8(battle);
             },
-            Message::DataFrame { battle } => {
-                res.reserve(5);
+            Message::DataFrame { battle, code } => {
+                res.reserve(6);
                 res.put_u8(6);
-                res.put_u16_le(1 as u16);
+                res.put_u16_le(2 as u16);
                 res.put_u8(0);
                 res.put_u8(battle);
+                res.put_u8(code);
             },
         }
         Ok(())

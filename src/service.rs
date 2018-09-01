@@ -13,6 +13,8 @@ use futures::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
+use rand::Rng;
+use rand;
 
 #[allow(dead_code)]
 pub struct Client {
@@ -51,7 +53,14 @@ impl Server {
     pub fn get_frame(&self) -> Message {
         // TODO: Compose data frames here
         let _cache = self.cache.lock().unwrap();
-        Message::DataFrame { battle: 0 }
+        let code: u8 = rand::thread_rng().gen_range(1, 8);
+        let code = match code {
+            2 => 13,
+            3 => 125,
+            4 => 126,
+            _ => code,
+        };
+        Message::DataFrame { battle: 0, code }
     }
 
     #[allow(dead_code)]
@@ -193,7 +202,7 @@ impl Server {
             }).map_err(|_| { println!("Battle starting now") } )
             .then(|_| {
                 println!("Battle begin");
-                timer::Interval::new(Instant::now(), Duration::from_secs(1))
+                timer::Interval::new(Instant::now(), Duration::from_millis(200))
                 .map_err(|_| {})
                 .for_each(move|_| {
                     let clients = s_main.clients.lock().unwrap().0.clone();
