@@ -3,6 +3,8 @@ Simple proto implementation for MOBA.
 
 [![Build Status][travis-image]][travis-url]
 
+## Proof of concept
+Hooked with Pong example from amethyst game engine: https://youtu.be/0Yt7t5rptZY
 
 ## Player States
 + Connected
