@@ -7,6 +7,7 @@ extern crate tokio_io;
 extern crate rand;
 
 pub use model::Message;
+pub use model::GameAction;
 pub use service::Service;
 
 mod model;

@@ -53,15 +53,16 @@ impl Server {
     #[allow(dead_code)]
     pub fn get_frame(&self) -> Message {
         // TODO: Compose data frames here
-        let _cache = self.cache.lock().unwrap();
-        let code: u8 = rand::thread_rng().gen_range(1, 8);
-        let code = match code {
-            2 => 13,
-            3 => 125,
-            4 => 126,
-            _ => code,
-        };
-        Message::DataFrame { battle: 0, code }
+        let mut game_actions = Vec::new();
+        let mut cache = self.cache.lock().unwrap();
+        for input in cache.iter() {
+            match input {
+                Message::DataInput{ actions, .. } => { game_actions.extend_from_slice(actions); },
+                _ => {},
+            }
+        }
+        cache.clear();
+        Message::DataFrame { battle: 8, actions: game_actions }
     }
 
     #[allow(dead_code)]
@@ -203,7 +204,7 @@ impl Server {
             }).map_err(|_| { println!("Battle starting now") } )
             .then(|_| {
                 println!("Battle begin");
-                timer::Interval::new(Instant::now(), Duration::from_millis(100))
+                timer::Interval::new(Instant::now(), Duration::from_millis(50))
                 .map_err(|_| {})
                 .for_each(move|_| {
                     let clients = s_main.clients.lock().unwrap().0.clone();
@@ -309,8 +310,12 @@ impl Service {
                 Message::BattleStart { battle: _ } => {
                     client.status.store(Status::Start as usize, Ordering::Release)
                 },
-                Message::DataInput { battle: _, ref mut player } => {
-                    *player = client.player.load(Ordering::Acquire) as u8;
+                Message::DataInput { ref mut player, ref mut actions, .. } => {
+                    let id = client.player.load(Ordering::Acquire) as u8;
+                    *player = id;
+                    for ref mut action in actions {
+                        action.player = id;
+                    }
                     send_msg = client.status.load(Ordering::Acquire) == Status::Start as usize;
                 }
                 _ => { println!("Unknown message!"); },
@@ -413,8 +418,18 @@ impl Service {
         send!(Message::BattleInit{ battle, player });
         tokio::spawn(timer::Interval::new(Instant::now(), Duration::from_secs(1))
             .for_each(move |_| {
+                let code: u8 = rand::thread_rng().gen_range(0, 8);
+                let action = if code > 4 { 0 } else { 1 };
+                let code: u8 = rand::thread_rng().gen_range(1, 4);
+                let code = match code {
+                    2 => 13,
+                    3 => 125,
+                    4 => 126,
+                    _ => code,
+                };
+                let action = GameAction { player, action, code };
                 let mut tx = tx.lock().unwrap();
-                let _ = tx.start_send(Message::DataInput{ battle, player });
+                let _ = tx.start_send(Message::DataInput{ battle, player, actions: vec![action] });
                 future::result(Ok(()))
             })
             .map_err(|_| {})

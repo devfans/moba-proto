@@ -33,6 +33,15 @@ impl Error for CodecError {
 #[derive(Debug)]
 #[derive(Clone)]
 #[allow(dead_code)]
+pub struct GameAction {
+    pub player: u8,
+    pub code: u8,
+    pub action: u8,
+}
+
+#[derive(Debug)]
+#[derive(Clone)]
+#[allow(dead_code)]
 pub enum Message {
     BattleTest {
         raw: Vec<u8>,
@@ -54,10 +63,11 @@ pub enum Message {
     DataInput {
         battle: u8,
         player: u8,
+        actions: Vec<GameAction>,
     },
     DataFrame {
         battle: u8,
-        code: u8,
+        actions: Vec<GameAction>,
     },
 }
 
@@ -104,7 +114,7 @@ impl codec::Decoder for MessageFramer {
 
     #[allow(dead_code)]
     fn decode(&mut self, bytes: &mut bytes::BytesMut) -> Result<Option<Message>, io::Error> {
-        // println!("RX: {:?}", bytes.clone());
+        println!("RX: {:?}", &bytes.clone()[..]);
         if self.cursor != 0 {
             let cur = cmp::min(self.cursor, bytes.len());
             bytes.advance(cur);
@@ -169,14 +179,32 @@ impl codec::Decoder for MessageFramer {
             },
             5 => {
                 let battle = get_slice!(1)[0];
+                let actions_len = get_slice![1][0];
+                let mut actions = Vec::new();
+                for _ in 0..actions_len {
+                    actions.push(GameAction {
+                        player: 0,
+                        code: get_slice![1][0],
+                        action: get_slice![1][0],
+                    });
+                }
                 advance_bytes!();
-                Ok(Some(Message::DataInput{ battle, player: 0 }))
+                Ok(Some(Message::DataInput{ battle, player: 0, actions }))
             },
             6 => {
                 let battle = get_slice!(1)[0];
-                let code = get_slice!(1)[0];
+                let actions_len = get_slice![1][0];
+                let mut actions = Vec::new();
+                for _ in 0..actions_len {
+                    actions.push(GameAction {
+                        player: get_slice![1][0],
+                        code: get_slice![1][0],
+                        action: get_slice![1][0],
+                    });
+                }
+
                 advance_bytes!();
-                Ok(Some(Message::DataFrame{ battle, code }))
+                Ok(Some(Message::DataFrame{ battle, actions }))
             },
             _ => {
 				return Err(io::Error::new(io::ErrorKind::InvalidData, CodecError))
@@ -230,22 +258,35 @@ impl codec::Encoder for MessageFramer {
                 res.put_u8(0);
                 res.put_u8(battle);
             },
-            Message::DataInput { battle, player: _ } => {
-                res.reserve(5);
+            Message::DataInput { battle, actions, .. } => {
+                res.reserve(6 +  2 * actions.len());
                 res.put_u8(5);
-                res.put_u16_le(1 as u16);
+                res.put_u16_le(2 + 2 * actions.len() as u16);
                 res.put_u8(0);
                 res.put_u8(battle);
+                res.put_u8(actions.len() as u8);
+                for action in &actions {
+                    res.put_u8(action.code); 
+                    res.put_u8(action.action); 
+                }
+                        
             },
-            Message::DataFrame { battle, code } => {
-                res.reserve(6);
+            Message::DataFrame { battle, actions } => {
+                res.reserve(6 +  3 * actions.len());
                 res.put_u8(6);
-                res.put_u16_le(2 as u16);
+                res.put_u16_le(2 + 3 * actions.len() as u16);
                 res.put_u8(0);
                 res.put_u8(battle);
-                res.put_u8(code);
+                res.put_u8(actions.len() as u8);
+                for action in &actions {
+                    res.put_u8(action.player);
+                    res.put_u8(action.code); 
+                    res.put_u8(action.action); 
+                }
+                println!("TX-DATAFRAME: {:?}", &res.clone()[..]);
             },
         }
+
         Ok(())
     }
 
