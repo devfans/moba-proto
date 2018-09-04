@@ -10,7 +10,7 @@ use tokio;
 use model::*;
 use futures::*;
 use futures::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 // use std::sync::mpsc::{channel, Sender};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
@@ -19,10 +19,10 @@ use rand;
 
 #[allow(dead_code)]
 pub struct Client {
-    stream: Mutex<mpsc::UnboundedSender<Message>>,
-    active: AtomicBool,
-    player: AtomicUsize,
-    status: AtomicUsize,
+    pub stream: Mutex<mpsc::UnboundedSender<Message>>,
+    pub active: AtomicBool,
+    pub player: AtomicUsize,
+    pub status: AtomicUsize,
 }
 
 impl Client {
@@ -39,7 +39,34 @@ impl Client {
             self.active.store(false, Ordering::Release);
             false
         }
-    } 
+    }
+
+    #[allow(dead_code)]
+    pub fn new(rx: mpsc::UnboundedReceiver<Message>) -> Arc<RwLock<Self>> {
+        let (sink, stream) = mpsc::unbounded();
+        tokio::spawn(stream.for_each(|msg| {
+            println!("Dropping msg for client is not connected yet: {:?}", msg); 
+            Ok(())
+        }));
+        let client = {
+            let client = Client {
+                stream: Mutex::new(sink),
+                active: AtomicBool::new(true),
+                player: AtomicUsize::new(0),
+                status: AtomicUsize::new(Status::Connected as usize),
+            };
+            let client = Arc::new(RwLock::new(client));
+            let client_clone = client.clone();
+            tokio::spawn(rx.for_each(move |msg| {
+                let client = client_clone.read().unwrap();
+                let mut tx = client.stream.lock().unwrap();
+                tx.start_send(msg).unwrap();
+                Ok(())
+            }));
+            client
+        };
+        client
+    }
 }
 
 pub struct Server {
@@ -204,7 +231,7 @@ impl Server {
             }).map_err(|_| { println!("Battle starting now") } )
             .then(|_| {
                 println!("Battle begin");
-                timer::Interval::new(Instant::now(), Duration::from_millis(50))
+                timer::Interval::new(Instant::now(), Duration::from_millis(500))
                 .map_err(|_| {})
                 .for_each(move|_| {
                     let clients = s_main.clients.lock().unwrap().0.clone();
@@ -327,7 +354,7 @@ impl Service {
     }
 
     #[allow(dead_code)]
-    pub fn connect(self, relay: Arc<Mutex<mpsc::UnboundedSender<Message>>>) {
+    pub fn connect(self, relay: Arc<Mutex<mpsc::UnboundedSender<Message>>>, handler: Arc<RwLock<Client>>) {
         tokio::spawn(net::TcpStream::connect(&self.addr)
         .then(move |res| -> future::FutureResult<(), ()> {
             match res {
@@ -338,6 +365,11 @@ impl Service {
                     let client_loop = client.clone();
                     let client_bk = client.clone();
                     let (sink, send) = mpsc::unbounded();
+                    let handler_bk = handler.clone();
+                    {
+                        let mut handler = handler.write().unwrap();
+                        handler.stream = Mutex::new(sink.clone());
+                    }
                     let sink = Arc::new(Mutex::new(sink));
                     let sink_clone = sink.clone();
                     let stream = send.map_err(|_| -> io::Error {
@@ -355,14 +387,14 @@ impl Service {
                     })
                     .then(move |_| {
                         println!("Reconnecting...");
-                        Arc::try_unwrap(client_bk).ok().unwrap().connect(relay_clone.clone());
+                        Arc::try_unwrap(client_bk).ok().unwrap().connect(relay_clone.clone(), handler_bk);
                         future::result(Ok(()))
                     }));
 
                     client_loop.start_client(sink_clone);
                 },
                 Err(_) => {
-                    self.connect(relay.clone());
+                    self.connect(relay.clone(), handler.clone());
                 },
             };
             future::result(Ok(()))
@@ -416,24 +448,24 @@ impl Service {
         let player = self.conf["player"].as_u64().unwrap() as u8;
         let battle = self.battle;
         send!(Message::BattleInit{ battle, player });
-        tokio::spawn(timer::Interval::new(Instant::now(), Duration::from_secs(1))
-            .for_each(move |_| {
-                let code: u8 = rand::thread_rng().gen_range(0, 8);
-                let action = if code > 4 { 0 } else { 1 };
-                let code: u8 = rand::thread_rng().gen_range(1, 4);
-                let code = match code {
-                    2 => 13,
-                    3 => 125,
-                    4 => 126,
-                    _ => code,
-                };
-                let action = GameAction { player, action, code };
-                let mut tx = tx.lock().unwrap();
-                let _ = tx.start_send(Message::DataInput{ battle, player, actions: vec![action] });
-                future::result(Ok(()))
-            })
-            .map_err(|_| {})
-        );
+        // tokio::spawn(timer::Interval::new(Instant::now(), Duration::from_secs(1))
+        //     .for_each(move |_| {
+        //         let code: u8 = rand::thread_rng().gen_range(0, 8);
+        //         let action = if code > 4 { 0 } else { 1 };
+        //         let code: u8 = rand::thread_rng().gen_range(1, 4);
+        //         let code = match code {
+        //             2 => 13,
+        //             3 => 125,
+        //             4 => 126,
+        //             _ => code,
+        //         };
+        //         let action = GameAction { player, action, code };
+        //         let mut tx = tx.lock().unwrap();
+        //         let _ = tx.start_send(Message::DataInput{ battle, player, actions: vec![action] });
+        //         future::result(Ok(()))
+        //     })
+        //     .map_err(|_| {})
+        // );
     }
 }
 

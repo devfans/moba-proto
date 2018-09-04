@@ -1,6 +1,6 @@
 {
   "server": "127.0.0.1:3001",
-  "players": 2,
+  "players": 1,
   "battle": 8,
   "player": 0
 }
