@@ -44,6 +44,7 @@ pub struct Server {
     players: Mutex<Vec<u8>>,
     bus: Mutex<mpsc::UnboundedSender<Message>>,
     cache: Mutex<Vec<Message>>,
+    avail_id: AtomicUsize,
 }
 
 impl Server {
@@ -62,6 +63,7 @@ impl Server {
             players: Mutex::new(Vec::new()),
             bus: Mutex::new(tx),
             cache: Mutex::new(Vec::new()),
+            avail_id: AtomicUsize::new(1),
         });
         let server_bus = server.clone();
         tokio::spawn(rx.for_each(move |msg| {
@@ -92,7 +94,7 @@ impl Server {
                     match status {
                         Status::Init => {
                             if wait_players.contains(&player) {
-                                println!("Dumplicate player ID: {}", player);
+                                println!("Duplicate player ID: {}", player);
                                 continue;
                             }
                             ready = ready + 1;
@@ -136,7 +138,7 @@ impl Server {
                         let player = client.player.load(Ordering::Acquire);
                         match status {
                             Status::Wait => {
-                                let _ = client.send(Message::BattleMeta { battle: service_load.battle, players: players.clone() });
+                                let _ = client.send(Message::BattleMeta { battle: service_load.battle, player: player as u8, raw: players.clone() });
                             },
                             Status::Ready => {
                                 if !wait_players.contains(&player) {
@@ -288,11 +290,14 @@ impl Service {
             println!("Received: {:?}", msg);
             let mut send_msg = false;
             match msg {
-                Message::BattleInit { battle: _, player } => {
-                    client.player.store(player as usize, Ordering::Release);
-                    client.status.store(Status::Init as usize, Ordering::Release)
+                Message::BattleInit { battle: _, player: _ } => {
+                    // println!("goes here");
+                    let id = server.avail_id.load(Ordering::Acquire);
+                    server.avail_id.store(id + 1 as usize, Ordering::Release);
+                    client.player.store(id as usize, Ordering::Release);
+                    client.status.store(Status::Init as usize, Ordering::Release);
                 },
-                Message::BattleMeta { battle: _, players: _ } => {
+                Message::BattleMeta { battle: _, player: _, raw: _ } => {
                     client.status.store(Status::Ready as usize, Ordering::Release)
                 },
                 Message::BattleStart { battle: _ } => {
@@ -306,7 +311,7 @@ impl Service {
             }
             if send_msg { send!(msg); }
             future::result(Ok(()))
-        }).map_err(|_| { println!("Client disconnected!");})
+        }).map_err(|err| { println!("Client disconnected{:?}!", err);})
         );
     }
 
@@ -369,7 +374,7 @@ impl Service {
 
         println!("RX: {:?}", msg);
         match msg {
-            Message::BattleMeta { battle: _, players: _ } => {
+            Message::BattleMeta { battle: _, player: _, raw: _ } => {
                 send!(msg);
             },
             Message::BattleStart { battle: _  } => {

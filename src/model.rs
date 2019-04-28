@@ -43,7 +43,8 @@ pub enum Message {
     },
     BattleMeta {
         battle: u8,
-        players: Vec<u8>,
+        player: u8,
+        raw: Vec<u8>,
     },
     BattleStart {
         battle: u8,
@@ -103,7 +104,7 @@ impl codec::Decoder for MessageFramer {
 
     #[allow(dead_code)]
     fn decode(&mut self, bytes: &mut bytes::BytesMut) -> Result<Option<Message>, io::Error> {
-        // println!("RX: {:?}", bytes.clone());
+        println!("RX: {:?}", bytes.clone());
         if self.cursor != 0 {
             let cur = cmp::min(self.cursor, bytes.len());
             bytes.advance(cur);
@@ -151,10 +152,11 @@ impl codec::Decoder for MessageFramer {
             },
             2 => {
                 let battle = get_slice!(1)[0];
-                let players_len = get_slice!(1)[0]; 
-                let players = get_slice!(players_len).to_vec();
+                let player = get_slice!(1)[0];
+                let raw_len = get_slice!(1)[0]; 
+                let raw = get_slice!(raw_len).to_vec();
                 advance_bytes!();
-                Ok(Some(Message::BattleMeta { battle, players }))
+                Ok(Some(Message::BattleMeta { battle, player, raw }))
             },
             3 => {
                 let battle = get_slice!(1)[0];
@@ -187,6 +189,7 @@ impl codec::Encoder for MessageFramer {
     type Item = Message;
 	type Error = io::Error;
     fn encode(&mut self, msg: Message, res: &mut bytes::BytesMut) -> Result<(), io::Error> {
+        println!("TX: {:?}", msg.clone());
         match msg {
             Message::BattleTest { raw } => {
                 res.reserve(4 + 1 + raw.len());
@@ -205,14 +208,15 @@ impl codec::Encoder for MessageFramer {
                 res.put_u8(battle);
                 res.put_u8(player);
             },
-            Message::BattleMeta { battle, players } => {
-                res.reserve(6 + players.len());
+            Message::BattleMeta { battle, player, raw } => {
+                res.reserve(7 + raw.len());
                 res.put_u8(2);
-                res.put_u16_le(2 + players.len() as u16);
+                res.put_u16_le(3 + raw.len() as u16);
                 res.put_u8(0);
                 res.put_u8(battle);
-                res.put_u8(players.len() as u8);
-                res.put_slice(&players);
+                res.put_u8(player);
+                res.put_u8(raw.len() as u8);
+                res.put_slice(&raw);
             },
             Message::BattleStart { battle } => {
                 res.reserve(5);
@@ -243,6 +247,7 @@ impl codec::Encoder for MessageFramer {
                 res.put_u8(battle);
             },
         }
+        println!("TX: {:?}", res.clone());
         Ok(())
     }
 
