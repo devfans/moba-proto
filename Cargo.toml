@@ -18,10 +18,10 @@ panic = "abort"
 
 [dependencies]
 http = "0.1.10"
-tokio = "*"
-tokio-io = "*"
+tokio = "0.1.19"
+tokio-io = "0.1.12"
 tokio-timer = "*"
-tokio-codec = "*"
+tokio-codec = "0.1.1"
 serde_json = "1.0"
 futures = "*"
 bytes = "0.4"

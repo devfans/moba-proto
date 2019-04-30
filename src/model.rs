@@ -29,7 +29,7 @@ impl Error for CodecError {
 //   5: DataInput
 //   6: DataFrame
 // ==================
-
+  
 #[derive(Debug)]
 #[derive(Clone)]
 #[allow(dead_code)]
@@ -55,9 +55,12 @@ pub enum Message {
     DataInput {
         battle: u8,
         player: u8,
+        actions: Vec<u8>,
     },
     DataFrame {
         battle: u8,
+        frame: usize,
+        actions: Vec<u8>,
     },
 }
 
@@ -104,7 +107,6 @@ impl codec::Decoder for MessageFramer {
 
     #[allow(dead_code)]
     fn decode(&mut self, bytes: &mut bytes::BytesMut) -> Result<Option<Message>, io::Error> {
-        println!("RX: {:?}", bytes.clone());
         if self.cursor != 0 {
             let cur = cmp::min(self.cursor, bytes.len());
             bytes.advance(cur);
@@ -114,7 +116,7 @@ impl codec::Decoder for MessageFramer {
 
         if bytes.len() < 4 { return Ok(None); }
         let len = ((((bytes[3] as usize) << 8) | (bytes[2] as usize)) << 8) | bytes[1] as usize;
-
+        if len + 4 > bytes.len() { return Ok(None); } 
         let mut pos = 4;
         macro_rules! get_slice {
             ( $size: expr ) => {
@@ -170,13 +172,15 @@ impl codec::Decoder for MessageFramer {
             },
             5 => {
                 let battle = get_slice!(1)[0];
+                let player = get_slice!(1)[0];
+                let actions = get_slice!(len - 2).to_vec();
                 advance_bytes!();
-                Ok(Some(Message::DataInput{ battle, player: 0 }))
+                Ok(Some(Message::DataInput{ battle, player, actions }))
             },
             6 => {
                 let battle = get_slice!(1)[0];
                 advance_bytes!();
-                Ok(Some(Message::DataFrame{ battle }))
+                Ok(Some(Message::DataFrame{ battle, actions: Vec::new(), frame: 0 as usize }))
             },
             _ => {
 				return Err(io::Error::new(io::ErrorKind::InvalidData, CodecError))
@@ -232,19 +236,21 @@ impl codec::Encoder for MessageFramer {
                 res.put_u8(0);
                 res.put_u8(battle);
             },
-            Message::DataInput { battle, player: _ } => {
+            Message::DataInput { battle, player: _, actions: _ } => {
                 res.reserve(5);
                 res.put_u8(5);
                 res.put_u16_le(1 as u16);
                 res.put_u8(0);
                 res.put_u8(battle);
             },
-            Message::DataFrame { battle } => {
+            Message::DataFrame { battle, frame, actions } => {
                 res.reserve(5);
                 res.put_u8(6);
-                res.put_u16_le(1 as u16);
+                res.put_u16_le(1 + 4 + actions.len() as u16);
                 res.put_u8(0);
                 res.put_u8(battle);
+                res.put_u32_le(frame as u32);
+                res.put_slice(&actions);
             },
         }
         println!("TX: {:?}", res.clone());
