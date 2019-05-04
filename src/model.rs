@@ -3,7 +3,7 @@ use bytes;
 use bytes::BufMut;
 use std::error::Error;
 use std::{cmp, fmt, io};
-use tokio_io::codec;
+use tokio::codec;
 
 
 #[derive(Debug)]
@@ -205,7 +205,7 @@ impl codec::Encoder for MessageFramer {
                 println!("TX: {:?}", res.clone());
             },
             Message::BattleInit { battle, player } => {
-                res.reserve(4 + 2);
+                res.reserve(6);
                 res.put_u8(1);
                 res.put_u16_le(2 as u16);
                 res.put_u8(0);
@@ -244,7 +244,7 @@ impl codec::Encoder for MessageFramer {
                 res.put_u8(battle);
             },
             Message::DataFrame { battle, frame, actions } => {
-                res.reserve(5);
+                res.reserve(5 + 4 + actions.len());
                 res.put_u8(6);
                 res.put_u16_le(1 + 4 + actions.len() as u16);
                 res.put_u8(0);

@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use tokio::{net, timer};
 
 use std::io;
-use tokio_codec;
+use tokio::codec;
 use tokio;
 
 use model::*;
@@ -257,7 +257,7 @@ impl Service {
     #[allow(dead_code)]
     pub fn handle(&self, server: Arc<Server>, sock: net::TcpStream) {
         sock.set_nodelay(true).unwrap();
-        let (tx, rx) = tokio_codec::Framed::new(sock, MessageFramer::new()).split();
+        let (tx, rx) = codec::Framed::new(sock, MessageFramer::new()).split();
         let (sink, send) = mpsc::unbounded();
         let stream = send.map_err(|_| -> io::Error {
             panic!("mpsc streams cant generate errors!");
@@ -334,7 +334,7 @@ impl Service {
             match res {
                 Ok(stream) => {
                     stream.set_nodelay(true).unwrap();
-                    let (tx, rx) = tokio_codec::Framed::new(stream, MessageFramer::new()).split();
+                    let (tx, rx) = codec::Framed::new(stream, MessageFramer::new()).split();
                     let client = Arc::new(self);
                     let client_loop = client.clone();
                     let client_bk = client.clone();
