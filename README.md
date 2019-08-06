@@ -11,8 +11,7 @@ Hooked with Pong example from amethyst game engine: https://youtu.be/0Yt7t5rptZY
 </p>
 
 ## PoC with Unity3D Engine
-Vido Demo: https://youtu.be/BTc9AY81ltU
-https://github.com/devfans/RTB-Client 
+Vido Demo: https://youtu.be/BTc9AY81ltU  Client: https://github.com/devfans/RTB-Client 
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/devfans/moba-proto/master/poc-tank.gif" alt="Sublime's custom image" width="600" height="320"/>
