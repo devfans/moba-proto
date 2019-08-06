@@ -1,10 +1,14 @@
 # moba-proto
-Simple proto implementation for MOBA.
+Simple proto implementation for MOBA server end player inputs broadcast.
 
 [![Build Status][travis-image]][travis-url]
 
-## Proof of concept
+## PoC with Amethyst Engine
 Hooked with Pong example from amethyst game engine: https://youtu.be/0Yt7t5rptZY
+
+## PoC with Unity3D Engine
+
+https://github.com/devfans/RTB-Client
 
 ## Player States
 + Connected
