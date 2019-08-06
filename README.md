@@ -6,6 +6,10 @@ Simple proto implementation for MOBA server end player inputs broadcast.
 ## PoC with Amethyst Engine
 Hooked with Pong example from amethyst game engine: https://youtu.be/0Yt7t5rptZY
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/devfans/moba-proto/master/poc-pong.gif" alt="Sublime's custom image" width="600" height="320"/>
+</p>
+
 ## PoC with Unity3D Engine
 
 https://github.com/devfans/RTB-Client
